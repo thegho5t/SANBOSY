@@ -1,0 +1,26 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+build/
+dist/
+
+# Local runtime state (created under ~/.sandbox, but ignore if ever local)
+.sandbox/
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+
+# Secrets / keys — never commit
+api_keys.json
+*.env
+!deploy/sandbox.env.example
+
+# Editor / OS
+.vscode/
+.idea/
+*.swp
+.DS_Store

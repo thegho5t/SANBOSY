@@ -1,0 +1,42 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+
+jobs:
+  unit-tests:
+    # The 53 unit tests are deterministic and need no gVisor, so they gate every
+    # push. Integration tests (real runsc sandboxes) run locally under WSL2 — see
+    # `make test-integration`.
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12"]
+    services:
+      redis:  # so the optional Redis-backend tests run instead of skipping
+        image: redis:7
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "redis-cli ping" --health-interval 5s
+          --health-timeout 3s --health-retries 5
+    env:
+      SANDBOX_REDIS_URL: redis://localhost:6379
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install (app + test deps)
+        run: pip install -e '.[test]'
+
+      - name: Unit tests (no gVisor)
+        run: pytest -q -m "not integration"
+
+      - name: Import check (app packages load cleanly)
+        run: python -c "import app.main, app.executor.oci, app.executor.runner"

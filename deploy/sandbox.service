@@ -1,0 +1,31 @@
+# systemd *user* service for the code sandbox.
+#
+# Install (as the sandbox user, inside WSL2):
+#   mkdir -p ~/.config/systemd/user
+#   cp deploy/sandbox.service ~/.config/systemd/user/sandbox.service
+#   # edit WorkingDirectory below to your checkout path, then:
+#   systemctl --user daemon-reload
+#   systemctl --user enable --now sandbox
+#   loginctl enable-linger "$USER"    # keep it running without an active login
+#
+# A *user* unit (not system) is deliberate: the executor uses `systemd-run --user`
+# for per-run cgroup scopes and rootless runsc, so it must run in the user manager.
+[Unit]
+Description=Code Sandbox (gVisor-isolated multi-language executor)
+After=default.target
+
+[Service]
+Type=exec
+WorkingDirectory=%h/sandbox
+# Load tunables (workers, caps, auth, rate limits, etc.) if present.
+EnvironmentFile=-%h/.config/sandbox.env
+ExecStart=/usr/bin/env python3 -m uvicorn app.main:app --host 127.0.0.1 --port 8000
+# Graceful shutdown: give the app time to drain in-flight jobs (see
+# SANDBOX_SHUTDOWN_GRACE_S) before systemd SIGKILLs it.
+KillSignal=SIGTERM
+TimeoutStopSec=45
+Restart=on-failure
+RestartSec=2
+
+[Install]
+WantedBy=default.target

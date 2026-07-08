@@ -1,0 +1,578 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Code Sandbox</title>
+<style>
+  :root {
+    --bg:#1e1e2e; --bg2:#181825; --bg3:#11111b; --surface:#313244;
+    --text:#cdd6f4; --sub:#a6adc8; --dim:#6c7086;
+    --blue:#89b4fa; --green:#a6e3a1; --red:#f38ba8; --yellow:#f9e2af; --mauve:#cba6f7;
+  }
+  :root[data-theme="light"] {
+    --bg:#eff1f5; --bg2:#e6e9ef; --bg3:#dce0e8; --surface:#ccd0da;
+    --text:#4c4f69; --sub:#5c5f77; --dim:#8c8fa1;
+    --blue:#1e66f5; --green:#40a02b; --red:#d20f39; --yellow:#df8e1d; --mauve:#8839ef;
+  }
+  * { box-sizing: border-box; }
+  body { font-family: system-ui, -apple-system, sans-serif; margin: 0;
+         background: var(--bg); color: var(--text); height: 100vh; overflow: hidden;
+         display: flex; flex-direction: column; }
+  header { display: flex; align-items: center; gap: .75rem; padding: .6rem 1rem;
+           background: var(--bg2); border-bottom: 1px solid var(--surface); }
+  header .title { font-weight: 700; letter-spacing: .3px; }
+  header .badge { font-size: 11px; color: var(--sub); background: var(--bg3);
+                  padding: .2rem .5rem; border-radius: 5px; }
+  header .spacer { flex: 1; }
+  select, button, input {
+    background: var(--surface); color: var(--text); border: 1px solid transparent;
+    border-radius: 6px; padding: .4rem .7rem; font-size: 13px; font-family: inherit; }
+  select:focus, input:focus { outline: none; border-color: var(--blue); }
+  button.run { background: var(--blue); color: var(--bg3); font-weight: 700; cursor: pointer; }
+  button.run:hover { filter: brightness(1.08); }
+  button.run:disabled { opacity: .5; cursor: wait; }
+  button.run .kbd { font-size: 10px; opacity: .6; margin-left: .4rem; }
+  button.ghost { background: transparent; border: 1px solid var(--surface); color: var(--sub);
+                 cursor: pointer; }
+  button.ghost:hover { color: var(--text); border-color: var(--blue); }
+  .toggle { font-size: 12px; color: var(--sub); display: flex; align-items: center; gap: .3rem;
+            cursor: pointer; user-select: none; }
+  #apikey { width: 150px; }
+  main { flex: 1; display: grid; grid-template-columns: var(--split, 1fr) 5px 1fr;
+         background: var(--surface); min-height: 0; }
+  #divider { background: var(--surface); cursor: col-resize; }
+  #divider:hover { background: var(--blue); }
+  .toast { position: fixed; bottom: 1rem; left: 50%; transform: translateX(-50%);
+           background: var(--surface); color: var(--text); padding: .5rem .9rem;
+           border-radius: 6px; font-size: 13px; opacity: 0; transition: opacity .2s;
+           pointer-events: none; }
+  .toast.show { opacity: 1; }
+  .pane { background: var(--bg); display: flex; flex-direction: column; min-height: 0; }
+  .pane-head { font-size: 11px; text-transform: uppercase; letter-spacing: .8px;
+               color: var(--dim); padding: .5rem .8rem; display: flex; align-items: center; gap: .5rem; }
+  .tabs { display: flex; align-items: stretch; gap: 1px; background: var(--bg2);
+          overflow-x: auto; min-height: 32px; }
+  .tab { display: flex; align-items: center; gap: .35rem; padding: .35rem .6rem;
+         font-size: 12px; color: var(--sub); background: var(--bg2); cursor: pointer;
+         border-bottom: 2px solid transparent; white-space: nowrap; }
+  .tab:hover { color: var(--text); }
+  .tab.active { color: var(--text); background: var(--bg); border-bottom-color: var(--blue); }
+  .tab .x { color: var(--dim); font-size: 11px; }
+  .tab .x:hover { color: var(--red); }
+  .tab.entry .lockicon { font-size: 10px; opacity: .5; }
+  .tab-add { padding: .35rem .6rem; color: var(--dim); background: var(--bg2);
+             cursor: pointer; font-size: 14px; }
+  .tab-add:hover { color: var(--blue); }
+  #editor { flex: 1; min-height: 0; font-size: 14px; }
+  #code { flex: 1; width: 100%; resize: none; background: var(--bg3); color: var(--text);
+          border: none; padding: .6rem; font-family: ui-monospace, monospace; font-size: 13px; }
+  details { border-top: 1px solid var(--surface); }
+  summary { padding: .4rem .8rem; font-size: 11px; color: var(--dim); cursor: pointer;
+            text-transform: uppercase; letter-spacing: .8px; }
+  #stdin { width: 100%; height: 70px; resize: vertical; background: var(--bg3);
+           color: var(--text); border: none; padding: .5rem .8rem;
+           font-family: ui-monospace, monospace; font-size: 13px; }
+  .statusbar { display: flex; flex-wrap: wrap; gap: .4rem; padding: .5rem .8rem;
+               border-bottom: 1px solid var(--surface); min-height: 34px; align-items: center; }
+  .chip { font-size: 11px; padding: .15rem .5rem; border-radius: 5px; background: var(--bg3);
+          color: var(--sub); }
+  .chip.ok { color: var(--green); } .chip.bad { color: var(--red); }
+  .chip.warn { color: var(--yellow); } .chip.info { color: var(--blue); }
+  #out { flex: 1; margin: 0; padding: .6rem .8rem; white-space: pre-wrap; overflow: auto;
+         font-family: ui-monospace, monospace; font-size: 13px; line-height: 1.45; }
+  #out .stderr { color: var(--red); }
+  #out .placeholder { color: var(--dim); }
+  #history { overflow: auto; max-height: 30vh; border-top: 1px solid var(--surface); }
+  .hitem { display: flex; align-items: center; gap: .5rem; padding: .35rem .8rem;
+           cursor: pointer; font-size: 12px; border-bottom: 1px solid var(--bg2); }
+  .hitem:hover { background: var(--bg2); }
+  .hitem .lang { color: var(--blue); min-width: 74px; }
+  .hitem .grow { flex: 1; color: var(--sub); }
+  .hitem .bad { color: var(--red); } .hitem .ok { color: var(--green); }
+  .hitem .del { color: var(--dim); background: none; border: none; cursor: pointer;
+                padding: 0 .3rem; opacity: 0; }
+  .hitem:hover .del { opacity: 1; }
+  .empty { color: var(--dim); font-size: 12px; padding: .6rem .8rem; }
+</style>
+</head>
+<body>
+<header>
+  <span class="title">⬡ Code Sandbox</span>
+  <span class="badge" id="engine">gVisor</span>
+  <span class="badge" id="queue" title="workers · active · queued"></span>
+  <span class="spacer"></span>
+  <label class="toggle" title="stream stdout/stderr live via Server-Sent Events">
+    <input type="checkbox" id="stream"> stream
+  </label>
+  <label class="toggle" title="run as a background job and poll for the result">
+    <input type="checkbox" id="async"> async
+  </label>
+  <button class="ghost" id="share" title="copy a shareable link to this snippet">Share</button>
+  <button class="ghost" id="download" title="download project as JSON">⤓</button>
+  <button class="ghost" id="upload" title="load project from JSON">⤒</button>
+  <button class="ghost" id="theme" title="toggle light/dark">◐</button>
+  <input type="file" id="uploadInput" accept=".json,application/json" style="display:none">
+  <input id="apikey" type="password" placeholder="API key" autocomplete="off" style="display:none">
+  <select id="lang" title="language"></select>
+  <button class="run" id="run">Run <span class="kbd">⌘⏎</span></button>
+</header>
+<main>
+  <section class="pane">
+    <div class="tabs" id="tabs"></div>
+    <div id="editor"></div>
+    <textarea id="code" spellcheck="false" style="display:none"></textarea>
+    <details>
+      <summary>stdin</summary>
+      <textarea id="stdin" spellcheck="false" placeholder="fed to the program on stdin"></textarea>
+    </details>
+  </section>
+  <div id="divider"></div>
+  <section class="pane">
+    <div class="statusbar" id="statusbar">
+      <span class="chip">ready</span>
+    </div>
+    <pre id="out"><span class="placeholder">Output appears here. Press ⌘/Ctrl+Enter to run.</span></pre>
+    <div class="pane-head">history <span class="grow"></span></div>
+    <div id="history"><div class="empty">no runs yet</div></div>
+  </section>
+</main>
+<div class="toast" id="toast"></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/ace/1.32.6/ace.min.js"
+        onload="window._aceReady=true" onerror="window._aceReady=false"></script>
+<script>
+const api = "/api/v1";
+const $ = (id) => document.getElementById(id);
+
+const TEMPLATES = {
+  python:     'print("hello from python")\n',
+  javascript: 'console.log("hello from node")\n',
+  ruby:       'puts "hello from ruby"\n',
+  cpp:        '#include <iostream>\nint main() {\n    std::cout << "hello from c++\\n";\n}\n',
+  rust:       'fn main() {\n    println!("hello from rust");\n}\n',
+  go:         'package main\nimport "fmt"\nfunc main() {\n    fmt.Println("hello from go")\n}\n',
+};
+const ACE_MODE = { python:"python", javascript:"javascript", ruby:"ruby",
+                   cpp:"c_cpp", rust:"rust", go:"golang" };
+
+let editor = null;          // Ace editor, or null -> textarea fallback
+const knownTemplates = new Set(Object.values(TEMPLATES));
+
+function initEditor() {
+  if (window._aceReady && window.ace) {
+    ace.config.set("basePath", "https://cdnjs.cloudflare.com/ajax/libs/ace/1.32.6/");
+    editor = ace.edit("editor");
+    editor.setTheme(document.documentElement.getAttribute("data-theme") === "light"
+                    ? "ace/theme/chrome" : "ace/theme/dracula");
+    editor.session.setUseWorker(false);
+    editor.setOptions({ fontSize: "14px", showPrintMargin: false, tabSize: 4, useSoftTabs: true });
+    editor.commands.addCommand({ name: "run", bindKey: {win:"Ctrl-Enter", mac:"Cmd-Enter"}, exec: run });
+  } else {                  // graceful fallback: plain textarea
+    $("editor").style.display = "none";
+    $("code").style.display = "block";
+    $("code").style.flex = "1";
+    $("code").addEventListener("keydown", (e) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === "Enter") { e.preventDefault(); run(); }
+    });
+  }
+}
+function getCode() { return editor ? editor.getValue() : $("code").value; }
+function setCode(v) { editor ? editor.setValue(v, -1) : ($("code").value = v); }
+function setModeById(mode) { if (editor) editor.session.setMode("ace/mode/" + mode); }
+
+// --- multi-file model: the editor shows one of `files`; sync before reading all ---
+const LANG_MAIN = {};       // language -> entrypoint filename (from /languages)
+let files = [];             // [{name, content}]; files[0] is the entrypoint
+let active = 0;
+
+function modeForName(name) {
+  const ext = (name.split(".").pop() || "").toLowerCase();
+  return ({ py:"python", js:"javascript", mjs:"javascript", rb:"ruby",
+            c:"c_cpp", h:"c_cpp", hpp:"c_cpp", cc:"c_cpp", cpp:"c_cpp",
+            rs:"rust", go:"golang" })[ext] || ACE_MODE[$("lang").value] || "text";
+}
+function syncActive() { if (files[active]) files[active].content = getCode(); }
+function showFile(i) {
+  syncActive(); active = i;
+  setCode(files[i].content); setModeById(modeForName(files[i].name));
+  renderTabs();
+}
+function currentFiles() { syncActive(); return files.map(f => ({ name: f.name, content: f.content })); }
+
+function renderTabs() {
+  const bar = $("tabs"); bar.innerHTML = "";
+  files.forEach((f, i) => {
+    const t = document.createElement("div");
+    t.className = "tab" + (i === active ? " active" : "") + (i === 0 ? " entry" : "");
+    t.title = i === 0 ? "entrypoint (fixed name)" : "double-click to rename";
+    t.innerHTML = `<span>${f.name}</span>` +
+      (i === 0 ? '<span class="lockicon">●</span>' : '<span class="x" title="delete">✕</span>');
+    t.onclick = () => showFile(i);
+    if (i !== 0) {
+      t.ondblclick = () => renameFile(i);
+      t.querySelector(".x").onclick = (e) => { e.stopPropagation(); deleteFile(i); };
+    }
+    bar.appendChild(t);
+  });
+  const add = document.createElement("div");
+  add.className = "tab-add"; add.textContent = "＋"; add.title = "add file";
+  add.onclick = addFile;
+  bar.appendChild(add);
+}
+function validName(name, exceptIdx) {
+  return name && !name.includes("/") && !name.includes("\\") && name !== "." && name !== ".."
+    && !files.some((f, j) => j !== exceptIdx && f.name === name);
+}
+function addFile() {
+  const name = (prompt("New file name (importable from the entrypoint):", "helper") || "").trim();
+  if (!name) return;
+  if (!validName(name, -1)) { toast("invalid or duplicate name"); return; }
+  files.push({ name, content: "" });
+  showFile(files.length - 1);
+}
+function deleteFile(i) {
+  if (i === 0 || files.length <= 1) return;
+  files.splice(i, 1);
+  active = Math.min(active, files.length - 1);
+  showFile(active);
+}
+function renameFile(i) {
+  if (i === 0) return;
+  const name = (prompt("Rename file:", files[i].name) || "").trim();
+  if (!name) return;
+  if (!validName(name, i)) { toast("invalid or duplicate name"); return; }
+  files[i].name = name; showFile(i);
+}
+function initFiles(lang, arr) {
+  files = (arr && arr.length) ? arr
+        : [{ name: LANG_MAIN[lang] || "main", content: TEMPLATES[lang] || "" }];
+  active = 0;
+  setCode(files[0].content); setModeById(modeForName(files[0].name));
+  renderTabs();
+}
+
+function authHeaders(extra) {
+  const h = Object.assign({}, extra || {});
+  const key = $("apikey").value.trim();
+  if (key) h["X-API-Key"] = key;
+  return h;
+}
+
+async function loadLangs() {
+  const d = await (await fetch(api + "/languages")).json();
+  const sel = $("lang");
+  d.languages.forEach(l => {
+    LANG_MAIN[l.name] = l.main_file || "main";
+    const o = document.createElement("option");
+    o.value = o.textContent = l.name; sel.appendChild(o);
+  });
+  $("engine").textContent = `gVisor · ${d.defaults.memory_max} · ${d.defaults.run_timeout_ms}ms`;
+  if (d.auth_required) {
+    const box = $("apikey");
+    box.style.display = "";
+    box.value = localStorage.getItem("sandbox_api_key") || "";
+    box.addEventListener("change", () => localStorage.setItem("sandbox_api_key", box.value));
+  }
+  const shared = loadShared();
+  const names = d.languages.map(l => l.name);
+  if (shared && names.includes(shared.l)) {
+    sel.value = shared.l;
+    const arr = (shared.f && shared.f.length)
+      ? shared.f.map(x => ({ name: x.n, content: x.c }))
+      : [{ name: LANG_MAIN[shared.l] || "main", content: shared.c || "" }];
+    initFiles(shared.l, arr);
+    $("stdin").value = shared.i || "";
+  } else {
+    sel.value = names.includes("python") ? "python" : names[0];
+    initFiles(sel.value, null);
+  }
+  sel.addEventListener("change", applyLanguage);
+}
+
+function applyLanguage() {
+  const lang = $("lang").value;
+  syncActive();
+  const entry = files[0];
+  const wasTemplate = entry.content.trim() === "" ||
+    knownTemplates.has(entry.content) || knownTemplates.has(entry.content.trim() + "\n");
+  entry.name = LANG_MAIN[lang] || "main";
+  if (wasTemplate) entry.content = TEMPLATES[lang] || "";
+  if (active === 0) { setCode(entry.content); setModeById(modeForName(entry.name)); }
+  renderTabs();
+}
+
+function chip(text, cls) { return `<span class="chip ${cls||''}">${text}</span>`; }
+
+function renderStatus(d, fromHistory) {
+  const ok = d.exit_code === 0 && !d.timed_out;
+  const bits = [];
+  if (d.stage === "compile") bits.push(chip("compile error", "bad"));
+  bits.push(chip(d.timed_out ? "timed out" : `exit ${d.exit_code}`, ok ? "ok" : "bad"));
+  bits.push(chip(`${d.wall_time_ms} ms`, "info"));
+  if (d.truncated_stdout) bits.push(chip("stdout truncated", "warn"));
+  if (d.suspicious) bits.push(chip("⚠ " + (d.flags||[]).join(", "), "warn"));
+  if (fromHistory) bits.push(chip("from history"));
+  $("statusbar").innerHTML = bits.join("");
+}
+
+function renderOutput(d) {
+  const out = $("out");
+  out.textContent = "";
+  if (d.stdout) out.appendChild(document.createTextNode(d.stdout));
+  if (d.stderr) {
+    const s = document.createElement("span");
+    s.className = "stderr"; s.textContent = (d.stdout ? "\n" : "") + d.stderr;
+    out.appendChild(s);
+  }
+  if (d.error) {
+    const s = document.createElement("span");
+    s.className = "stderr"; s.textContent = "\n[orchestration] " + d.error;
+    out.appendChild(s);
+  }
+  if (!d.stdout && !d.stderr && !d.error)
+    out.innerHTML = '<span class="placeholder">(no output)</span>';
+}
+
+function reqBody() {
+  return JSON.stringify({
+    language: $("lang").value,
+    files: currentFiles(),
+    stdin: $("stdin").value,
+  });
+}
+function httpError(r, d) {
+  $("statusbar").innerHTML = chip(`HTTP ${r.status}`, "bad");
+  $("out").innerHTML = '<span class="stderr">' + (d.detail || r.statusText) + '</span>';
+}
+
+async function run() {
+  const btn = $("run");
+  btn.disabled = true;
+  $("statusbar").innerHTML = chip("running…", "info");
+  try {
+    if ($("stream").checked) { await runStream(); return; }
+    if ($("async").checked) { await runAsync(); return; }
+    const r = await fetch(api + "/execute", {
+      method: "POST", headers: authHeaders({ "Content-Type": "application/json" }),
+      body: reqBody(),
+    });
+    const d = await r.json();
+    if (!r.ok) { httpError(r, d); return; }
+    renderOutput(d); renderStatus(d, false);
+  } catch (e) {
+    $("statusbar").innerHTML = chip("network error", "bad");
+    $("out").innerHTML = '<span class="stderr">' + e + '</span>';
+  } finally {
+    btn.disabled = false; loadHistory(); loadStats();
+  }
+}
+
+async function runAsync() {
+  // submit a background job, then poll for its status/result
+  const sub = await fetch(api + "/jobs", {
+    method: "POST", headers: authHeaders({ "Content-Type": "application/json" }),
+    body: reqBody() });
+  const s = await sub.json();
+  if (!sub.ok) { httpError(sub, s); return; }
+  const id = s.id;
+  for (let i = 0; i < 300; i++) {
+    const j = await (await fetch(api + "/jobs/" + id, { headers: authHeaders() })).json();
+    $("statusbar").innerHTML = chip(`job ${j.status}…`, "info") + chip(id.slice(0, 8));
+    if (j.status === "done" || j.status === "error") {
+      renderOutput(j.result); renderStatus(j.result, false);
+      return;
+    }
+    await new Promise(r => setTimeout(r, 400));
+  }
+  $("statusbar").innerHTML = chip("job still running (stopped polling)", "warn");
+}
+
+function applyTheme(theme) {
+  document.documentElement.setAttribute("data-theme", theme);
+  localStorage.setItem("sandbox_theme", theme);
+  if (editor) editor.setTheme(theme === "light" ? "ace/theme/chrome" : "ace/theme/dracula");
+}
+function toggleTheme() {
+  const cur = document.documentElement.getAttribute("data-theme") === "light" ? "light" : "dark";
+  applyTheme(cur === "light" ? "dark" : "light");
+}
+
+function appendOut(text, isErr) {
+  const out = $("out");
+  if (out.querySelector(".placeholder")) out.textContent = "";
+  if (isErr) {
+    const s = document.createElement("span");
+    s.className = "stderr"; s.textContent = text; out.appendChild(s);
+  } else {
+    out.appendChild(document.createTextNode(text));
+  }
+  out.scrollTop = out.scrollHeight;
+}
+
+async function runStream() {
+  $("out").textContent = "";
+  $("statusbar").innerHTML = chip("streaming…", "info");
+  const r = await fetch(api + "/execute/stream", {
+    method: "POST", headers: authHeaders({ "Content-Type": "application/json" }),
+    body: reqBody() });
+  if (!r.ok) { httpError(r, await r.json().catch(() => ({}))); return; }
+  const reader = r.body.getReader();
+  const dec = new TextDecoder();
+  let buf = "";
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buf += dec.decode(value, { stream: true });
+    let idx;
+    while ((idx = buf.indexOf("\n\n")) >= 0) {
+      const line = buf.slice(0, idx).replace(/^data: /, "");
+      buf = buf.slice(idx + 2);
+      if (!line) continue;
+      let ev; try { ev = JSON.parse(line); } catch (e) { continue; }
+      if (ev.type === "stdout") appendOut(ev.data, false);
+      else if (ev.type === "stderr") appendOut(ev.data, true);
+      else if (ev.type === "done") {
+        if (ev.error) appendOut("\n[orchestration] " + ev.error, true);
+        renderStatus(ev, false);
+      }
+    }
+  }
+}
+
+function toast(msg) {
+  const t = $("toast");
+  t.textContent = msg; t.classList.add("show");
+  setTimeout(() => t.classList.remove("show"), 1600);
+}
+
+function share() {
+  const state = { l: $("lang").value,
+                  f: currentFiles().map(x => ({ n: x.name, c: x.content })),
+                  i: $("stdin").value };
+  const encoded = btoa(unescape(encodeURIComponent(JSON.stringify(state))));
+  const url = location.origin + location.pathname + "#" + encoded;
+  history.replaceState(null, "", "#" + encoded);
+  navigator.clipboard.writeText(url).then(
+    () => toast("link copied to clipboard"),
+    () => toast("copy failed — link is in the address bar"));
+}
+
+function downloadProject() {
+  const project = { language: $("lang").value, files: currentFiles(), stdin: $("stdin").value };
+  const blob = new Blob([JSON.stringify(project, null, 2)], { type: "application/json" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = `sandbox-${project.language}.json`;
+  a.click();
+  URL.revokeObjectURL(a.href);
+  toast("project downloaded");
+}
+
+function uploadProject(file) {
+  const reader = new FileReader();
+  reader.onload = () => {
+    try {
+      const p = JSON.parse(reader.result);
+      if (!p.files || !p.files.length) throw new Error("no files");
+      if (p.language && LANG_MAIN[p.language]) { $("lang").value = p.language; }
+      initFiles($("lang").value,
+                p.files.map(f => ({ name: f.name, content: f.content })));
+      $("stdin").value = p.stdin || "";
+      toast("project loaded");
+    } catch (e) { toast("invalid project file"); }
+  };
+  reader.readAsText(file);
+}
+
+function loadShared() {
+  if (!location.hash || location.hash.length < 2) return null;
+  try {
+    return JSON.parse(decodeURIComponent(escape(atob(location.hash.slice(1)))));
+  } catch (e) { return null; }
+}
+
+function setupDivider() {
+  const d = $("divider");
+  let dragging = false;
+  d.addEventListener("mousedown", () => { dragging = true; document.body.style.userSelect = "none"; });
+  window.addEventListener("mouseup", () => { dragging = false; document.body.style.userSelect = ""; });
+  window.addEventListener("mousemove", (e) => {
+    if (!dragging) return;
+    const w = window.innerWidth;
+    if (!w || !isFinite(e.clientX)) return;
+    const frac = Math.min(0.8, Math.max(0.2, e.clientX / w));
+    if (!isFinite(frac)) return;
+    document.documentElement.style.setProperty("--split", frac + "fr");
+    if (editor) editor.resize();
+  });
+}
+
+async function loadHistory() {
+  const box = $("history");
+  try {
+    const r = await fetch(api + "/runs?limit=25", { headers: authHeaders() });
+    if (!r.ok) { box.innerHTML = ''; return; }
+    const d = await r.json();
+    if (!d.runs.length) { box.innerHTML = '<div class="empty">no runs yet</div>'; return; }
+    box.innerHTML = "";
+    d.runs.forEach(rn => {
+      const ok = rn.exit_code === 0 && !rn.timed_out;
+      const t = new Date(rn.created_at).toLocaleTimeString();
+      const el = document.createElement("div");
+      el.className = "hitem";
+      el.innerHTML =
+        `<span class="lang">${rn.language}</span>` +
+        `<span class="${ok ? 'ok' : 'bad'}">${rn.timed_out ? 'timeout' : 'exit ' + rn.exit_code}</span>` +
+        (rn.suspicious ? `<span class="bad" title="${(rn.flags||[]).join(', ')}">⚠</span>` : "") +
+        `<span class="grow">${rn.wall_time_ms}ms · ${t}</span>`;
+      el.onclick = () => replay(rn.id);
+      const del = document.createElement("button");
+      del.className = "del"; del.textContent = "✕"; del.title = "delete";
+      del.onclick = (e) => { e.stopPropagation(); deleteRun(rn.id); };
+      el.appendChild(del);
+      box.appendChild(el);
+    });
+  } catch (e) { /* history is best-effort */ }
+}
+
+async function replay(id) {
+  const r = await fetch(api + "/runs/" + id, { headers: authHeaders() });
+  if (!r.ok) return;
+  const d = await r.json();
+  $("lang").value = d.language;
+  // entrypoint first, then the rest
+  const main = LANG_MAIN[d.language];
+  const names = Object.keys(d.files).sort((a, b) => (a === main ? -1 : b === main ? 1 : 0));
+  initFiles(d.language, names.map(n => ({ name: n, content: d.files[n] })));
+  $("stdin").value = d.stdin || "";
+  renderOutput(d); renderStatus(d, true);
+}
+
+async function deleteRun(id) {
+  await fetch(api + "/runs/" + id, { method: "DELETE", headers: authHeaders() });
+  loadHistory();
+}
+
+async function loadStats() {
+  try {
+    const s = await (await fetch(api + "/stats")).json();
+    const q = s.queue;
+    $("queue").textContent = `queue ${q.active}/${q.workers} · ${q.queued} waiting`;
+  } catch (e) { /* best-effort */ }
+}
+
+document.documentElement.setAttribute("data-theme", localStorage.getItem("sandbox_theme") || "dark");
+$("run").onclick = run;
+$("share").onclick = share;
+$("theme").onclick = toggleTheme;
+$("download").onclick = downloadProject;
+$("upload").onclick = () => $("uploadInput").click();
+$("uploadInput").onchange = (e) => { if (e.target.files[0]) uploadProject(e.target.files[0]); e.target.value = ""; };
+initEditor();
+setupDivider();
+loadLangs().then(() => { loadHistory(); loadStats(); });
+setInterval(loadStats, 4000);
+</script>
+</body>
+</html>

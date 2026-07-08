@@ -1,0 +1,7 @@
+# Normalise line endings: store LF in the repo. Shell scripts and Python MUST be
+# LF so they run correctly on Linux/WSL regardless of the committer's platform.
+* text=auto eol=lf
+*.sh    text eol=lf
+*.py    text eol=lf
+*.service text eol=lf
+Makefile  text eol=lf
