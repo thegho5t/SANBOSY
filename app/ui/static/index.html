@@ -94,11 +94,39 @@
                 padding: 0 .3rem; opacity: 0; }
   .hitem:hover .del { opacity: 1; }
   .empty { color: var(--dim); font-size: 12px; padding: .6rem .8rem; }
+
+  /* --- freshen-up --- */
+  header .brand { display: flex; flex-direction: column; line-height: 1.1; }
+  header .title { font-weight: 800; font-size: 15px;
+                  background: linear-gradient(90deg, var(--blue), var(--mauve));
+                  -webkit-background-clip: text; background-clip: text; color: transparent; }
+  header .tagline { font-size: 10px; color: var(--dim); letter-spacing: .2px; }
+  button, .ghost, select { transition: background .15s, border-color .15s, color .15s, filter .15s; }
+  .welcome { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between;
+             gap: .75rem; padding: .7rem 1rem; background: var(--bg2);
+             border-bottom: 2px solid var(--blue); font-size: 13px; color: var(--sub); }
+  .welcome strong { color: var(--text); }
+  .welcome-key { display: flex; gap: .4rem; align-items: center; }
+  .welcome-key input { width: 280px; }
+  footer { padding: .35rem 1rem; font-size: 11px; color: var(--dim); background: var(--bg2);
+           border-top: 1px solid var(--surface); display: flex; gap: 1.2rem; align-items: center;
+           flex-wrap: wrap; }
+  footer a { color: var(--blue); text-decoration: none; }
+  footer a:hover { text-decoration: underline; }
+  footer .dot { color: var(--green); }
+  #out .welcome-out { color: var(--sub); }
+  #out .welcome-out .k { color: var(--blue); }
+  ::-webkit-scrollbar { width: 10px; height: 10px; }
+  ::-webkit-scrollbar-thumb { background: var(--surface); border-radius: 6px; }
+  ::-webkit-scrollbar-track { background: transparent; }
 </style>
 </head>
 <body>
 <header>
-  <span class="title">⬡ Code Sandbox</span>
+  <span class="brand">
+    <span class="title">⬡ Code Sandbox</span>
+    <span class="tagline">run code in 6 languages, isolated in gVisor</span>
+  </span>
   <span class="badge" id="engine">gVisor</span>
   <span class="badge" id="queue" title="workers · active · queued"></span>
   <span class="spacer"></span>
@@ -117,6 +145,14 @@
   <select id="lang" title="language"></select>
   <button class="run" id="run">Run <span class="kbd">⌘⏎</span></button>
 </header>
+<div class="welcome" id="welcome" style="display:none">
+  <div>👋 <strong>Welcome.</strong> Paste the API key you were given, then write code and press
+     <strong>⌘/Ctrl + Enter</strong> to run it.</div>
+  <div class="welcome-key">
+    <input id="welcomekey" type="password" placeholder="paste your API key" autocomplete="off">
+    <button class="run" id="welcomego">Start →</button>
+  </div>
+</div>
 <main>
   <section class="pane">
     <div class="tabs" id="tabs"></div>
@@ -132,11 +168,18 @@
     <div class="statusbar" id="statusbar">
       <span class="chip">ready</span>
     </div>
-    <pre id="out"><span class="placeholder">Output appears here. Press ⌘/Ctrl+Enter to run.</span></pre>
+    <pre id="out"><span class="welcome-out">Write some code on the left and press <span class="k">⌘/Ctrl+Enter</span>.
+Output shows up here. Try switching languages, or the <span class="k">＋</span> tab to add a second file.</span></pre>
     <div class="pane-head">history <span class="grow"></span></div>
-    <div id="history"><div class="empty">no runs yet</div></div>
+    <div id="history"><div class="empty">your runs will appear here</div></div>
   </section>
 </main>
+<footer>
+  <span><span class="dot">●</span> gVisor-isolated · no network · resource-capped</span>
+  <span>every run is ephemeral</span>
+  <span class="spacer" style="flex:1"></span>
+  <span>6 languages · Python · JS · C++ · Ruby · Rust · Go</span>
+</footer>
 <div class="toast" id="toast"></div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/ace/1.32.6/ace.min.js"
@@ -157,6 +200,13 @@ const ACE_MODE = { python:"python", javascript:"javascript", ruby:"ruby",
                    cpp:"c_cpp", rust:"rust", go:"golang" };
 
 let editor = null;          // Ace editor, or null -> textarea fallback
+let authRequired = false;   // set from /languages; drives the welcome prompt
+
+function refreshWelcome() {
+  const need = authRequired && !(localStorage.getItem("sandbox_api_key") || "").trim();
+  $("welcome").style.display = need ? "" : "none";
+  if (need) $("welcomekey").focus();
+}
 const knownTemplates = new Set(Object.values(TEMPLATES));
 
 function initEditor() {
@@ -268,11 +318,21 @@ async function loadLangs() {
     o.value = o.textContent = l.name; sel.appendChild(o);
   });
   $("engine").textContent = `gVisor · ${d.defaults.memory_max} · ${d.defaults.run_timeout_ms}ms`;
+  authRequired = d.auth_required;
   if (d.auth_required) {
     const box = $("apikey");
     box.style.display = "";
     box.value = localStorage.getItem("sandbox_api_key") || "";
-    box.addEventListener("change", () => localStorage.setItem("sandbox_api_key", box.value));
+    box.addEventListener("change", () => { localStorage.setItem("sandbox_api_key", box.value); refreshWelcome(); });
+    // first-visit prompt when no key is stored yet
+    const saveKey = (k) => {
+      k = (k || "").trim();
+      if (!k) return;
+      box.value = k; localStorage.setItem("sandbox_api_key", k); refreshWelcome();
+    };
+    $("welcomego").onclick = () => saveKey($("welcomekey").value);
+    $("welcomekey").addEventListener("keydown", (e) => { if (e.key === "Enter") saveKey($("welcomekey").value); });
+    refreshWelcome();
   }
   const shared = loadShared();
   const names = d.languages.map(l => l.name);
@@ -400,7 +460,7 @@ function toggleTheme() {
 
 function appendOut(text, isErr) {
   const out = $("out");
-  if (out.querySelector(".placeholder")) out.textContent = "";
+  if (out.querySelector(".placeholder, .welcome-out")) out.textContent = "";
   if (isErr) {
     const s = document.createElement("span");
     s.className = "stderr"; s.textContent = text; out.appendChild(s);

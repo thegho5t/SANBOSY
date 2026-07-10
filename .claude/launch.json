@@ -10,6 +10,17 @@
         "exec python3 -m uvicorn app.main:app --host 127.0.0.1 --port 8000"
       ],
       "port": 8000
+    },
+    {
+      "name": "sandbox-preview",
+      "runtimeExecutable": "wsl",
+      "runtimeArgs": [
+        "-d", "Ubuntu", "--cd", "/mnt/c/Users/mohit/OneDrive/Desktop/sandbosy",
+        "--", "bash", "-lic",
+        "SANDBOX_API_KEYS=sk_demo123 exec python3 -m uvicorn app.main:app --host 127.0.0.1 --port 8090"
+      ],
+      "port": 8090,
+      "autoPort": false
     }
   ]
 }
