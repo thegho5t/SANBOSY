@@ -3,6 +3,18 @@
 Locally-hosted sandbox that executes untrusted code under strong isolation.
 Every run gets one fresh, ephemeral gVisor container, destroyed immediately after.
 
+## Try it live
+There's no permanent hosted instance (it needs a root Linux host for gVisor — see
+[Deployment](#deployment)). To share a temporary demo with a few people:
+```bash
+bash scripts/share.sh     # starts the hardened server + a Cloudflare quick-tunnel
+```
+It prints a public `https://<random>.trycloudflare.com` URL and the API keys to hand
+out (auth is required, rate-limited, abuse-quarantined). Send each person the link +
+one key; they open it, paste the key in the welcome prompt, and run code. The link
+lives only while your machine is on, and the URL changes each restart — it's a demo,
+not a deployment. `bash scripts/share.sh stop` tears it down.
+
 **Status:** Phase 1 + Phase 2 complete. Runs untrusted code end-to-end through gVisor
 with the hostile-code containment suite passing (17 cases), REST API + a web UI
 (Ace editor, verified in-browser), guest seccomp profile, declarative per-language limits.
