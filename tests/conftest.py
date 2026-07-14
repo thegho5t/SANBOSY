@@ -59,10 +59,16 @@ def run_code():
 
 
 @pytest.fixture
-def client():
+def client(tmp_path, monkeypatch):
     """Starlette TestClient with the app lifespan active (queue, limiter, etc.).
-    Used by integration API tests."""
+    Auth is forced OFF and history to a temp DB so the suite is independent of any
+    real ~/.sandbox state (e.g. demo keys created by serve_public.sh)."""
     from fastapi.testclient import TestClient
+    from app import store
+    from app.api import auth
+    monkeypatch.setattr(auth, "KEYS_FILE", tmp_path / "no_keys.json")
+    monkeypatch.delenv("SANDBOX_API_KEYS", raising=False)
+    monkeypatch.setattr(store, "DB_PATH", tmp_path / "hist.db")
     from app.main import app
     with TestClient(app) as c:
         yield c

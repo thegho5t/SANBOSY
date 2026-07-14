@@ -41,20 +41,28 @@ def _prepare(req: ExecuteRequest, request: Request, identity: Identity):
                             detail="identity quarantined for abusive activity")
 
     files = {f.name: f.content for f in req.files}
-    if lang.main_file not in files:
-        if len(files) == 1:  # single-file convenience: lone file is the entrypoint
-            files = {lang.main_file: next(iter(files.values()))}
-        else:
+    if req.entrypoint:
+        # run whichever file the caller chose (e.g. the tab the user is viewing)
+        if req.entrypoint not in files:
             raise HTTPException(
                 status_code=400,
-                detail=f"missing entrypoint file '{lang.main_file}'")
+                detail=f"entrypoint '{req.entrypoint}' is not one of the files")
+        ep = req.entrypoint
+    elif lang.main_file in files:
+        ep = lang.main_file
+    elif len(files) == 1:  # single-file convenience: lone file is the entrypoint
+        files = {lang.main_file: next(iter(files.values()))}
+        ep = lang.main_file
+    else:
+        raise HTTPException(status_code=400,
+                            detail=f"missing entrypoint file '{lang.main_file}'")
 
     timeout = None
     base = DEFAULT_LIMITS
     if req.run_timeout_ms:
         timeout = req.run_timeout_ms / 1000
         base = replace(DEFAULT_LIMITS, wall_timeout_s=timeout)
-    p = resolve(lang, base)
+    p = resolve(lang, base, entrypoint=ep)
 
     exec_req = ExecutionRequest(
         args=p.run_args, files=files, stdin=req.stdin,

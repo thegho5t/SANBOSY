@@ -412,10 +412,12 @@ function renderOutput(d) {
 }
 
 function reqBody() {
+  const fs = currentFiles();
   return JSON.stringify({
     language: $("lang").value,
-    files: currentFiles(),
+    files: fs,
     stdin: $("stdin").value,
+    entrypoint: (files[active] || fs[0]).name,   // run the file you're viewing
   });
 }
 function httpError(r, d) {

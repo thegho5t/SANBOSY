@@ -28,6 +28,7 @@ class ExecuteRequest(BaseModel):
     files: list[FileIn] = Field(..., min_length=1, max_length=MAX_FILES)
     stdin: str = Field("", max_length=STDIN_CAP)
     run_timeout_ms: int | None = Field(default=None, ge=100, le=30_000)
+    entrypoint: str | None = Field(default=None, max_length=255)  # which file to run
 
     @field_validator("files")
     @classmethod

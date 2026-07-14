@@ -96,16 +96,20 @@ def list_languages() -> list[str]:
     return sorted(_LANGUAGES)
 
 
-def resolve(lang: LanguageDef, base: Limits) -> Prepared:
+def resolve(lang: LanguageDef, base: Limits,
+            entrypoint: str | None = None) -> Prepared:
     """Map a LanguageDef to a concrete execution, applying its declarative
-    per-language limit and env overrides. compile_* are None for interpreted
-    languages. Single place that maps a LanguageDef to an execution."""
-    run_args = [a.replace("{main}", lang.main_file) for a in lang.run_args]
+    per-language limit and env overrides. `entrypoint` (a staged file name)
+    overrides which file `{main}` points at, so the UI can run whichever file the
+    user is viewing; defaults to the language's main_file. compile_* are None for
+    interpreted languages."""
+    ep = entrypoint or lang.main_file
+    run_args = [a.replace("{main}", ep) for a in lang.run_args]
     run_limits = replace(base, memory_max=lang.run_memory) if lang.run_memory else base
     if not lang.compile_args:
         return Prepared(run_args, None, run_limits, None,
                         dict(lang.run_env), {})
-    compile_args = [a.replace("{main}", lang.main_file) for a in lang.compile_args]
+    compile_args = [a.replace("{main}", ep) for a in lang.compile_args]
     overrides = {"memory_max": lang.compile_memory}
     if lang.compile_timeout_s:
         overrides["compile_timeout_s"] = lang.compile_timeout_s

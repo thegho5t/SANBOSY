@@ -50,6 +50,22 @@ def test_multifile_sibling_import(client):
     assert r.json()["stdout"].strip() == "42"
 
 
+def test_entrypoint_runs_chosen_file(client):
+    # 'entrypoint' runs whichever staged file the caller picks (the active UI tab)
+    files = [{"name": "main.py", "content": "print('MAIN')"},
+             {"name": "helper.py", "content": "print('HELPER')"}]
+    r1 = client.post("/api/v1/execute",
+                     json={"language": "python", "files": files, "entrypoint": "helper.py"})
+    assert r1.json()["stdout"].strip() == "HELPER"
+    r2 = client.post("/api/v1/execute",
+                     json={"language": "python", "files": files, "entrypoint": "main.py"})
+    assert r2.json()["stdout"].strip() == "MAIN"
+    # unknown entrypoint -> 400
+    bad = client.post("/api/v1/execute",
+                      json={"language": "python", "files": files, "entrypoint": "nope.py"})
+    assert bad.status_code == 400
+
+
 def test_multifile_go_package(client):
     # two files in the same `package main` compile together (go build -C /src .)
     body = {"language": "go", "files": [
