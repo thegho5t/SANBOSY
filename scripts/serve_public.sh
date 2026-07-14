@@ -15,6 +15,7 @@ if [ ! -f "$HOME/.sandbox/api_keys.json" ]; then
 fi
 
 # --- hardened public-ish settings ---
+export SANDBOX_PERSIST="${SANDBOX_PERSIST:-0}"         # no stored history for a shared demo (privacy)
 export SANDBOX_WORKERS="${SANDBOX_WORKERS:-2}"          # bound total concurrency
 export SANDBOX_QUEUE_DEPTH="${SANDBOX_QUEUE_DEPTH:-16}"
 export SANDBOX_RATE_PER_MIN="${SANDBOX_RATE_PER_MIN:-20}"   # per identity
