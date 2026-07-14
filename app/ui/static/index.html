@@ -274,11 +274,25 @@ function validName(name, exceptIdx) {
   return name && !name.includes("/") && !name.includes("\\") && name !== "." && name !== ".."
     && !files.some((f, j) => j !== exceptIdx && f.name === name);
 }
+function importHint(name) {
+  // extra files are libraries the entrypoint imports — they don't run on their own
+  const base = name.replace(/\.[^.]*$/, "");
+  const main = LANG_MAIN[$("lang").value] || "main";
+  switch ($("lang").value) {
+    case "python":     return `# "${name}" is imported by ${main}, not run on its own.\n# In ${main}:  import ${base}   (no .py)\n\n`;
+    case "javascript": return `// "${name}" is required by ${main}, not run on its own.\n// In ${main}:  const ${base} = require("./${base}")\n\n`;
+    case "ruby":       return `# "${name}" is required by ${main}, not run on its own.\n# In ${main}:  require_relative "${base}"\n\n`;
+    case "cpp":        return `// "${name}" is #included by ${main}, not compiled on its own.\n// In ${main}:  #include "${name}"\n\n`;
+    case "rust":       return `// "${name}" is a module of ${main}, not run on its own.\n// In ${main}:  mod ${base};\n\n`;
+    case "go":         return `// Part of the same program as ${main} (package main) — not run on its own.\npackage main\n\n`;
+    default:           return "";
+  }
+}
 function addFile() {
-  const name = (prompt("New file name (importable from the entrypoint):", "helper") || "").trim();
+  const name = (prompt("New file name (imported by the entrypoint — not run on its own):", "helper") || "").trim();
   if (!name) return;
   if (!validName(name, -1)) { toast("invalid or duplicate name"); return; }
-  files.push({ name, content: "" });
+  files.push({ name, content: importHint(name) });
   showFile(files.length - 1);
 }
 function deleteFile(i) {
