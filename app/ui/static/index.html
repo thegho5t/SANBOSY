@@ -304,7 +304,10 @@ function initFiles(lang, arr) {
 
 function authHeaders(extra) {
   const h = Object.assign({}, extra || {});
-  const key = $("apikey").value.trim();
+  // HTTP headers must be Latin-1. Strip anything else (smart quotes, NBSP,
+  // zero-width chars that sneak in when a key is copied) so a bad paste can't
+  // crash fetch() with a cryptic "non ISO-8859-1" error.
+  const key = $("apikey").value.replace(/[^\x20-\x7E]/g, "").trim();
   if (key) h["X-API-Key"] = key;
   return h;
 }
