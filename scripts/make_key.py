@@ -1,10 +1,13 @@
 """Generate an API key, store its hash, and print the raw key ONCE.
 
-Usage: python3 scripts/make_key.py <name>
+Usage: python3 scripts/make_key.py <name> [--role admin|user]
        python3 scripts/make_key.py --list
        python3 scripts/make_key.py --revoke <name>
 
 The raw key is shown only at creation time; only its SHA-256 hash is stored.
+Roles: 'admin' is the operator/superuser (not rate-limited, sees /abuse);
+'user' is a basic account. At most MAX_USERS basic users may exist at once;
+admins are unlimited and don't count toward that cap.
 """
 import argparse
 import datetime
@@ -15,6 +18,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from app.api.auth import KEYS_FILE, hash_key  # noqa: E402
+
+MAX_USERS = 2  # cap on basic (non-admin) accounts
 
 
 def _load() -> list[dict]:
@@ -32,6 +37,8 @@ def _save(entries: list[dict]) -> None:
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("name", nargs="?", help="label for the new key")
+    ap.add_argument("--role", choices=("admin", "user"), default="user",
+                    help="admin = operator/superuser; user = basic (default)")
     ap.add_argument("--list", action="store_true")
     ap.add_argument("--revoke", metavar="NAME")
     args = ap.parse_args()
@@ -40,7 +47,8 @@ def main() -> int:
 
     if args.list:
         for e in entries:
-            print(f"{e['name']:20} created={e.get('created', '?')}")
+            print(f"{e['name']:20} role={e.get('role', 'user'):6} "
+                  f"created={e.get('created', '?')}")
         if not entries:
             print("(no keys; auth is DISABLED)")
         return 0
@@ -59,15 +67,23 @@ def main() -> int:
     if any(e["name"] == args.name for e in entries):
         print(f"key named {args.name!r} already exists")
         return 1
+    if args.role == "user":
+        n_users = sum(1 for e in entries if e.get("role", "user") != "admin")
+        if n_users >= MAX_USERS:
+            print(f"user limit reached ({MAX_USERS} basic users). "
+                  f"Revoke one first, or create an admin with --role admin.")
+            return 1
 
     raw = "sk_" + secrets.token_urlsafe(32)
     entries.append({
         "name": args.name,
         "hash": hash_key(raw),
+        "role": args.role,
         "created": datetime.date.today().isoformat(),
     })
     _save(entries)
-    print(f"API key for {args.name!r} (shown once, store it now):\n\n  {raw}\n")
+    print(f"API key for {args.name!r} (role={args.role}; shown once, "
+          f"store it now):\n\n  {raw}\n")
     return 0
 
 

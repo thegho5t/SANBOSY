@@ -9,7 +9,7 @@ from dataclasses import replace
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
 
-from .auth import Identity, auth_enabled, require_api_key
+from .auth import Identity, auth_enabled, require_admin, require_api_key
 from .ratelimit import RateLimited
 from ..executor.jobqueue import QueueFull
 from ..executor.limits import DEFAULT_LIMITS
@@ -36,7 +36,7 @@ def _prepare(req: ExecuteRequest, request: Request, identity: Identity):
     if sum(len(f.content) for f in req.files) > DEFAULT_LIMITS.source_cap_bytes:
         raise HTTPException(status_code=413, detail="source too large")
 
-    if request.app.state.abuse.is_quarantined(identity.name):
+    if not identity.is_admin and request.app.state.abuse.is_quarantined(identity.name):
         raise HTTPException(status_code=403,
                             detail="identity quarantined for abusive activity")
 
@@ -71,6 +71,17 @@ def _prepare(req: ExecuteRequest, request: Request, identity: Identity):
         env=p.run_env or None, compile_env=p.compile_env or None,
         compile_cache=p.compile_cache, identity=identity.name)
     return exec_req, files
+
+
+def _rl_acquire(limiter, identity: Identity) -> None:
+    """Take a rate-limit slot — no-op for admins (operators aren't throttled)."""
+    if not identity.is_admin:
+        limiter.acquire(identity.name)
+
+
+def _rl_release(limiter, identity: Identity) -> None:
+    if not identity.is_admin:
+        limiter.release(identity.name)
 
 
 async def _finalize(app, identity_name: str, req: ExecuteRequest,
@@ -119,7 +130,7 @@ async def execute_code(
     exec_req, files = _prepare(req, request, identity)
     limiter = request.app.state.limiter
     try:
-        limiter.acquire(identity.name)
+        _rl_acquire(limiter, identity)
     except RateLimited as e:
         raise HTTPException(status_code=429, detail=e.reason,
                             headers={"Retry-After": str(e.retry_after)})
@@ -129,7 +140,7 @@ async def execute_code(
         raise HTTPException(status_code=429, detail="server busy, queue full",
                             headers={"Retry-After": "2"})
     finally:
-        limiter.release(identity.name)
+        _rl_release(limiter, identity)
 
     hist_id, _ = await _finalize(request.app, identity.name, req, files, result)
     return ExecuteResponse(**result.as_dict(), id=hist_id)
@@ -149,7 +160,7 @@ async def execute_stream_route(
     app = request.app
     limiter = app.state.limiter
     try:
-        limiter.acquire(identity.name)
+        _rl_acquire(limiter, identity)
     except RateLimited as e:
         raise HTTPException(status_code=429, detail=e.reason,
                             headers={"Retry-After": str(e.retry_after)})
@@ -185,7 +196,7 @@ async def execute_stream_route(
         finally:
             if acquired:
                 app.state.stream_slots.release()
-            limiter.release(identity.name)
+            _rl_release(limiter, identity)
 
     return StreamingResponse(gen(), media_type="text/event-stream",
                              headers={"Cache-Control": "no-cache",
@@ -210,7 +221,7 @@ async def submit_job(
     app = request.app
     limiter = app.state.limiter
     try:
-        limiter.acquire(identity.name)
+        _rl_acquire(limiter, identity)
     except RateLimited as e:
         raise HTTPException(status_code=429, detail=e.reason,
                             headers={"Retry-After": str(e.retry_after)})
@@ -221,13 +232,13 @@ async def submit_job(
                 app, identity.name, req, files, job.result)
             job.meta["history_id"] = hist_id
         finally:
-            limiter.release(identity.name)
+            _rl_release(limiter, identity)
 
     try:
         job_id = await app.state.queue.submit_async(
             exec_req, identity.name, on_complete)
     except QueueFull:
-        limiter.release(identity.name)
+        _rl_release(limiter, identity)
         raise HTTPException(status_code=429, detail="server busy, queue full",
                             headers={"Retry-After": "2"})
     return JobSubmitResponse(id=job_id, status="queued")
@@ -252,7 +263,7 @@ async def get_job(
 @router.get("/abuse")
 async def abuse_report(
     request: Request,
-    identity: Identity = Depends(require_api_key),
+    identity: Identity = Depends(require_admin),   # superuser only
 ) -> dict:
     return request.app.state.abuse.report()
 

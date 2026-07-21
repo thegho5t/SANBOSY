@@ -6,11 +6,13 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 # --- create API keys once (their presence turns auth ON) ---
+# One admin (the operator/superuser) + two basic users. The 2-user cap is
+# enforced by make_key.py; admins aren't rate-limited and can see /abuse.
 if [ ! -f "$HOME/.sandbox/api_keys.json" ]; then
-  echo "== creating API keys (share these with your people; shown once) =="
-  python3 scripts/make_key.py alice
-  python3 scripts/make_key.py bob
-  python3 scripts/make_key.py carol
+  echo "== creating API keys (shown once — store them now) =="
+  python3 scripts/make_key.py mohit --role admin
+  python3 scripts/make_key.py user1
+  python3 scripts/make_key.py user2
   echo "== re-list any time: python3 scripts/make_key.py --list =="
 fi
 

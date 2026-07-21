@@ -32,6 +32,11 @@ _header = APIKeyHeader(name="X-API-Key", auto_error=False)
 class Identity:
     name: str            # "local" when auth is disabled
     authenticated: bool
+    role: str = "user"   # "admin" (operator/superuser) or "user" (basic)
+
+    @property
+    def is_admin(self) -> bool:
+        return self.role == "admin"
 
 
 def hash_key(raw: str) -> str:
@@ -57,29 +62,38 @@ def auth_enabled() -> bool:
     return len(_load_store()) > 0
 
 
-def _match(raw: str) -> str | None:
-    """Return the identity name for a raw key, or None. Constant-time compare
-    against every stored hash so timing doesn't leak which keys exist."""
+def _match(raw: str) -> dict | None:
+    """Return the matching key entry (name + role), or None. Constant-time
+    compare against every stored hash so timing doesn't leak which keys exist."""
     candidate = hash_key(raw)
-    matched: str | None = None
+    matched: dict | None = None
     for entry in _load_store():
         if hmac.compare_digest(candidate, entry.get("hash", "")):
-            matched = entry.get("name", "unknown")
+            matched = entry
     return matched
 
 
 async def require_api_key(request: Request,
                           key: str | None = Depends(_header)) -> Identity:
     if not auth_enabled():
-        ident = Identity(name="local", authenticated=False)
+        # single-operator local use: full (admin) access, no key needed
+        ident = Identity(name="local", authenticated=False, role="admin")
         request.state.identity = ident
         return ident
     if not key:
         raise HTTPException(status_code=401, detail="missing API key",
                             headers={"WWW-Authenticate": "X-API-Key"})
-    name = _match(key)
-    if name is None:
+    entry = _match(key)
+    if entry is None:
         raise HTTPException(status_code=401, detail="invalid API key")
-    ident = Identity(name=name, authenticated=True)
+    ident = Identity(name=entry.get("name", "unknown"), authenticated=True,
+                     role=entry.get("role", "user"))
     request.state.identity = ident
     return ident
+
+
+async def require_admin(identity: "Identity" = Depends(require_api_key)) -> Identity:
+    """Gate a route to admin (superuser) identities only."""
+    if not identity.is_admin:
+        raise HTTPException(status_code=403, detail="admin privilege required")
+    return identity
