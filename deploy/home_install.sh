@@ -52,7 +52,7 @@ Description=Cloudflare tunnel for the Code Sandbox
 After=sandbox-app.service
 [Service]
 Type=exec
-ExecStart=$CF tunnel --no-autoupdate --url http://localhost:8000
+ExecStart=$CF tunnel --no-autoupdate --protocol http2 --url http://localhost:8000
 Restart=always
 RestartSec=5
 [Install]
