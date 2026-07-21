@@ -80,14 +80,22 @@ async def test_adversarial_escape_battery(run_code):
     leaks, kernel fingerprinting, privileged syscalls, symlink escape, the runc
     /proc/self/exe overwrite, sysrq, cross-ns kill. None may succeed."""
     r = await run_code("python", (HOSTILE / "adversary.py").read_text())
-    assert "ADVERSARY DONE" in r.stdout, r.stderr[:300]
+    assert "ADVERSARY DONE (escaped=0)" in r.stdout, r.stderr[:400]
     assert "ESCAPED" not in r.stdout
-    assert r.stdout.count("contained:") >= 20  # the full battery ran
+    assert r.stdout.count("contained:") >= 25  # the full battery ran
+    # the symlink probe must actually RESOLVE (positive control), otherwise a
+    # dangling link would make every downstream fs check pass for free
+    assert "link resolves" in r.stdout, r.stdout
+    # and the box must prove it's the sandbox root, not the host's
+    assert "value='sandbox'" in r.stdout, r.stdout
 
 
 async def test_native_compiled_adversary_contained(run_code):
     """A compiled binary making raw syscalls (not libc wrappers) is contained
     identically — closes the 'ships a native exploit' gap."""
     r = await run_code("cpp", (HOSTILE / "adversary.cpp").read_text())
-    assert r.exit_code == 0 and "ADVERSARY DONE" in r.stdout, r.stderr[:300]
+    assert r.exit_code == 0 and "ADVERSARY DONE (escaped=0)" in r.stdout, r.stderr[:400]
     assert "ESCAPED" not in r.stdout
+    # syscalls are proven refused (EPERM), not merely absent; and the symlink
+    # probe proves it resolves inside the sandbox root
+    assert "Operation not permitted" in r.stdout and "link resolves" in r.stdout
