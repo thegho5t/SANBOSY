@@ -83,16 +83,6 @@
          font-family: ui-monospace, monospace; font-size: 13px; line-height: 1.45; }
   #out .stderr { color: var(--red); }
   #out .placeholder { color: var(--dim); }
-  #history { overflow: auto; max-height: 30vh; border-top: 1px solid var(--surface); }
-  .hitem { display: flex; align-items: center; gap: .5rem; padding: .35rem .8rem;
-           cursor: pointer; font-size: 12px; border-bottom: 1px solid var(--bg2); }
-  .hitem:hover { background: var(--bg2); }
-  .hitem .lang { color: var(--blue); min-width: 74px; }
-  .hitem .grow { flex: 1; color: var(--sub); }
-  .hitem .bad { color: var(--red); } .hitem .ok { color: var(--green); }
-  .hitem .del { color: var(--dim); background: none; border: none; cursor: pointer;
-                padding: 0 .3rem; opacity: 0; }
-  .hitem:hover .del { opacity: 1; }
   .empty { color: var(--dim); font-size: 12px; padding: .6rem .8rem; }
 
   /* --- freshen-up --- */
@@ -170,8 +160,6 @@
     </div>
     <pre id="out"><span class="welcome-out">Write some code on the left and press <span class="k">⌘/Ctrl+Enter</span>.
 Output shows up here. Try switching languages, or the <span class="k">＋</span> tab to add a second file.</span></pre>
-    <div class="pane-head">history <span class="grow"></span></div>
-    <div id="history"><div class="empty">your runs will appear here</div></div>
   </section>
 </main>
 <footer>
@@ -381,7 +369,7 @@ function applyLanguage() {
 
 function chip(text, cls) { return `<span class="chip ${cls||''}">${text}</span>`; }
 
-function renderStatus(d, fromHistory) {
+function renderStatus(d) {
   const ok = d.exit_code === 0 && !d.timed_out;
   const bits = [];
   if (d.stage === "compile") bits.push(chip("compile error", "bad"));
@@ -389,7 +377,6 @@ function renderStatus(d, fromHistory) {
   bits.push(chip(`${d.wall_time_ms} ms`, "info"));
   if (d.truncated_stdout) bits.push(chip("stdout truncated", "warn"));
   if (d.suspicious) bits.push(chip("⚠ " + (d.flags||[]).join(", "), "warn"));
-  if (fromHistory) bits.push(chip("from history"));
   $("statusbar").innerHTML = bits.join("");
 }
 
@@ -443,7 +430,7 @@ async function run() {
     $("statusbar").innerHTML = chip("network error", "bad");
     $("out").innerHTML = '<span class="stderr">' + e + '</span>';
   } finally {
-    btn.disabled = false; loadHistory(); loadStats();
+    btn.disabled = false; loadStats();
   }
 }
 
@@ -587,52 +574,6 @@ function setupDivider() {
   });
 }
 
-async function loadHistory() {
-  const box = $("history");
-  try {
-    const r = await fetch(api + "/runs?limit=25", { headers: authHeaders() });
-    if (!r.ok) { box.innerHTML = ''; return; }
-    const d = await r.json();
-    if (!d.runs.length) { box.innerHTML = '<div class="empty">no runs yet</div>'; return; }
-    box.innerHTML = "";
-    d.runs.forEach(rn => {
-      const ok = rn.exit_code === 0 && !rn.timed_out;
-      const t = new Date(rn.created_at).toLocaleTimeString();
-      const el = document.createElement("div");
-      el.className = "hitem";
-      el.innerHTML =
-        `<span class="lang">${rn.language}</span>` +
-        `<span class="${ok ? 'ok' : 'bad'}">${rn.timed_out ? 'timeout' : 'exit ' + rn.exit_code}</span>` +
-        (rn.suspicious ? `<span class="bad" title="${(rn.flags||[]).join(', ')}">⚠</span>` : "") +
-        `<span class="grow">${rn.wall_time_ms}ms · ${t}</span>`;
-      el.onclick = () => replay(rn.id);
-      const del = document.createElement("button");
-      del.className = "del"; del.textContent = "✕"; del.title = "delete";
-      del.onclick = (e) => { e.stopPropagation(); deleteRun(rn.id); };
-      el.appendChild(del);
-      box.appendChild(el);
-    });
-  } catch (e) { /* history is best-effort */ }
-}
-
-async function replay(id) {
-  const r = await fetch(api + "/runs/" + id, { headers: authHeaders() });
-  if (!r.ok) return;
-  const d = await r.json();
-  $("lang").value = d.language;
-  // entrypoint first, then the rest
-  const main = LANG_MAIN[d.language];
-  const names = Object.keys(d.files).sort((a, b) => (a === main ? -1 : b === main ? 1 : 0));
-  initFiles(d.language, names.map(n => ({ name: n, content: d.files[n] })));
-  $("stdin").value = d.stdin || "";
-  renderOutput(d); renderStatus(d, true);
-}
-
-async function deleteRun(id) {
-  await fetch(api + "/runs/" + id, { method: "DELETE", headers: authHeaders() });
-  loadHistory();
-}
-
 async function loadStats() {
   try {
     const s = await (await fetch(api + "/stats")).json();
@@ -650,7 +591,7 @@ $("upload").onclick = () => $("uploadInput").click();
 $("uploadInput").onchange = (e) => { if (e.target.files[0]) uploadProject(e.target.files[0]); e.target.value = ""; };
 initEditor();
 setupDivider();
-loadLangs().then(() => { loadHistory(); loadStats(); });
+loadLangs().then(() => { loadStats(); });
 setInterval(loadStats, 4000);
 </script>
 </body>
