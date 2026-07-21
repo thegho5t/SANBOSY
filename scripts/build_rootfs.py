@@ -84,12 +84,15 @@ def ensure_skeleton() -> None:
         lp = ROOTFS / link
         if not lp.exists() and not lp.is_symlink():
             lp.symlink_to(target)
-    # minimal /etc: a nobody user, no real accounts, empty network config
+    # minimal /etc — deliberately NO passwd/group. They contain nothing sensitive
+    # (host accounts never appear here; the sandbox is fully isolated), but a
+    # decoy /etc/passwd *looks* like a breach when someone reads it and alarms
+    # users. Omitting them makes an escape attempt fail with a clean "No such
+    # file" error instead of returning realistic-looking content. All languages
+    # run fine without them.
     etc = ROOTFS / "etc"
-    (etc / "passwd").write_text(
-        "root:x:0:0:root:/root:/usr/sbin/nologin\n"
-        "nobody:x:65534:65534:nobody:/box:/usr/sbin/nologin\n")
-    (etc / "group").write_text("root:x:0:\nnogroup:x:65534:\n")
+    for stale in ("passwd", "group"):        # remove if a prior build created them
+        (etc / stale).unlink(missing_ok=True)
     (etc / "hostname").write_text("sandbox\n")
     (etc / "hosts").write_text("127.0.0.1 localhost\n")
 
