@@ -262,6 +262,14 @@ function validName(name, exceptIdx) {
   return name && !name.includes("/") && !name.includes("\\") && name !== "." && name !== ".."
     && !files.some((f, j) => j !== exceptIdx && f.name === name);
 }
+function extFor(lang) {                 // ".py", ".js", ... from the language's main file
+  const m = LANG_MAIN[lang] || "";
+  const i = m.lastIndexOf(".");
+  return i >= 0 ? m.slice(i) : "";
+}
+function withExt(name) {                 // add the language extension if none was typed
+  return /\.[^./\\]+$/.test(name) ? name : name + extFor($("lang").value);
+}
 function importHint(name) {
   // extra files are libraries the entrypoint imports — they don't run on their own
   const base = name.replace(/\.[^.]*$/, "");
@@ -277,8 +285,9 @@ function importHint(name) {
   }
 }
 function addFile() {
-  const name = (prompt("New file name (imported by the entrypoint — not run on its own):", "helper") || "").trim();
-  if (!name) return;
+  const raw = (prompt("New file name (imported by the entrypoint — not run on its own):", "helper") || "").trim();
+  if (!raw) return;
+  const name = withExt(raw);           // "helper" -> "helper.py" so imports resolve
   if (!validName(name, -1)) { toast("invalid or duplicate name"); return; }
   files.push({ name, content: importHint(name) });
   showFile(files.length - 1);
@@ -291,8 +300,9 @@ function deleteFile(i) {
 }
 function renameFile(i) {
   if (i === 0) return;
-  const name = (prompt("Rename file:", files[i].name) || "").trim();
-  if (!name) return;
+  const raw = (prompt("Rename file:", files[i].name) || "").trim();
+  if (!raw) return;
+  const name = withExt(raw);
   if (!validName(name, i)) { toast("invalid or duplicate name"); return; }
   files[i].name = name; showFile(i);
 }
