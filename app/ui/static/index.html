@@ -115,6 +115,11 @@
   .rtab.active { color: var(--text); background: var(--surface); }
   .rtabs .grow { flex: 1; }
   .rtab-info { color: var(--dim); font-size: 11px; margin-right: 6px; }
+  .new-pill { margin-left: 6px; font-size: 9px; text-transform: uppercase;
+              letter-spacing: .5px; color: #fff; background: var(--blue);
+              border-radius: 8px; padding: 1px 5px; vertical-align: 1px;
+              animation: newpulse 1.6s ease-in-out infinite; }
+  @keyframes newpulse { 0%,100% { opacity: 1; } 50% { opacity: .45; } }
   .ghost.sm { padding: 2px 7px; font-size: 12px; line-height: 1; }
   #outview { flex: 1; display: flex; flex-direction: column; min-height: 0; }
   #termview { flex: 1; min-height: 0; display: none; padding: 6px 4px 4px 8px;
@@ -171,7 +176,7 @@
   <section class="pane">
     <div class="rtabs">
       <button class="rtab active" id="tab-output">Output</button>
-      <button class="rtab" id="tab-term" title="interactive shell in the sandbox — run and debug manually">Terminal</button>
+      <button class="rtab" id="tab-term" title="interactive shell in the sandbox — run and debug manually">Terminal<span class="new-pill" id="term-new">new</span></button>
       <span class="grow"></span>
       <span class="rtab-info" id="term-info"></span>
       <button class="ghost sm" id="term-restart" style="display:none" title="restart the shell">⟳</button>
@@ -181,7 +186,10 @@
         <span class="chip">ready</span>
       </div>
       <pre id="out"><span class="welcome-out">Write some code on the left and press <span class="k">⌘/Ctrl+Enter</span>.
-Output shows up here. Try switching languages, or the <span class="k">＋</span> tab to add a second file.</span></pre>
+Output shows up here. Try switching languages, or the <span class="k">＋</span> tab to add a second file.
+
+Want to run things by hand or debug? Open the <span class="k">Terminal</span> tab above ↑ for an
+interactive shell in the sandbox — your files are in <span class="k">/src</span>. Try <span class="k">python3 main.py</span>.</span></pre>
     </div>
     <div id="termview">
       <div id="term"></div>
@@ -704,6 +712,10 @@ function showTerminalView(on) {
   $("termview").style.display = on ? "block" : "none";
   $("tab-output").classList.toggle("active", !on);
   $("tab-term").classList.toggle("active", on);
+  if (on && $("term-new")) {  // dismiss the "new" hint after first open
+    $("term-new").remove();
+    try { localStorage.setItem("sandbox_term_seen", "1"); } catch (e) {}
+  }
   if (on && ensureTerm()) {
     setTimeout(() => {
       try { fit.fit(); } catch (e) {}
@@ -717,6 +729,7 @@ document.documentElement.setAttribute("data-theme", localStorage.getItem("sandbo
 $("tab-output").onclick = () => showTerminalView(false);
 $("tab-term").onclick = () => showTerminalView(true);
 $("term-restart").onclick = () => { stopTerminal(); startTerminal(); };
+try { if (localStorage.getItem("sandbox_term_seen") && $("term-new")) $("term-new").remove(); } catch (e) {}
 $("run").onclick = run;
 $("share").onclick = share;
 $("theme").onclick = toggleTheme;
