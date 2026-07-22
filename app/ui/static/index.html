@@ -106,6 +106,20 @@
   footer .dot { color: var(--green); }
   #out .welcome-out { color: var(--sub); }
   #out .welcome-out .k { color: var(--blue); }
+  /* right-pane tabs + terminal */
+  .rtabs { display: flex; align-items: center; gap: 2px; padding: 4px 8px;
+           border-bottom: 1px solid var(--surface); background: var(--bg2); }
+  .rtab { background: none; border: none; color: var(--sub); cursor: pointer;
+          font: inherit; font-size: 12px; padding: 4px 12px; border-radius: 6px; }
+  .rtab:hover { color: var(--text); background: var(--surface); }
+  .rtab.active { color: var(--text); background: var(--surface); }
+  .rtabs .grow { flex: 1; }
+  .rtab-info { color: var(--dim); font-size: 11px; margin-right: 6px; }
+  .ghost.sm { padding: 2px 7px; font-size: 12px; line-height: 1; }
+  #outview { flex: 1; display: flex; flex-direction: column; min-height: 0; }
+  #termview { flex: 1; min-height: 0; display: none; padding: 6px 4px 4px 8px;
+              background: #0b0e14; }
+  #term { width: 100%; height: 100%; }
   ::-webkit-scrollbar { width: 10px; height: 10px; }
   ::-webkit-scrollbar-thumb { background: var(--surface); border-radius: 6px; }
   ::-webkit-scrollbar-track { background: transparent; }
@@ -155,11 +169,23 @@
   </section>
   <div id="divider"></div>
   <section class="pane">
-    <div class="statusbar" id="statusbar">
-      <span class="chip">ready</span>
+    <div class="rtabs">
+      <button class="rtab active" id="tab-output">Output</button>
+      <button class="rtab" id="tab-term" title="interactive shell in the sandbox — run and debug manually">Terminal</button>
+      <span class="grow"></span>
+      <span class="rtab-info" id="term-info"></span>
+      <button class="ghost sm" id="term-restart" style="display:none" title="restart the shell">⟳</button>
     </div>
-    <pre id="out"><span class="welcome-out">Write some code on the left and press <span class="k">⌘/Ctrl+Enter</span>.
+    <div id="outview">
+      <div class="statusbar" id="statusbar">
+        <span class="chip">ready</span>
+      </div>
+      <pre id="out"><span class="welcome-out">Write some code on the left and press <span class="k">⌘/Ctrl+Enter</span>.
 Output shows up here. Try switching languages, or the <span class="k">＋</span> tab to add a second file.</span></pre>
+    </div>
+    <div id="termview">
+      <div id="term"></div>
+    </div>
   </section>
 </main>
 <footer>
@@ -172,6 +198,10 @@ Output shows up here. Try switching languages, or the <span class="k">＋</span>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/ace/1.32.6/ace.min.js"
         onload="window._aceReady=true" onerror="window._aceReady=false"></script>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/xterm@5.3.0/css/xterm.min.css">
+<script src="https://cdn.jsdelivr.net/npm/xterm@5.3.0/lib/xterm.min.js"
+        onload="window._xtermReady=true" onerror="window._xtermReady=false"></script>
+<script src="https://cdn.jsdelivr.net/npm/xterm-addon-fit@0.8.0/lib/xterm-addon-fit.min.js"></script>
 <script>
 const api = "/api/v1";
 const $ = (id) => document.getElementById(id);
@@ -589,10 +619,104 @@ async function loadStats() {
     const s = await (await fetch(api + "/stats")).json();
     const q = s.queue;
     $("queue").textContent = `queue ${q.active}/${q.workers} · ${q.queued} waiting`;
+    if (s.terminals) $("term-info").textContent =
+      `${s.terminals.active}/${s.terminals.max} terminals`;
   } catch (e) { /* best-effort */ }
 }
 
+// ---- interactive terminal (xterm.js over a WebSocket to a gVisor shell) ----
+let term = null, fit = null, termWS = null;
+
+function ensureTerm() {
+  if (term) return true;
+  if (!window._xtermReady || !window.Terminal) {
+    toast("terminal library didn't load (offline?)"); return false;
+  }
+  term = new Terminal({
+    cursorBlink: true, fontSize: 13, scrollback: 2000,
+    fontFamily: "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace",
+    theme: { background: "#0b0e14", foreground: "#c9d1d9", cursor: "#58a6ff" },
+  });
+  fit = new FitAddon.FitAddon();
+  term.loadAddon(fit);
+  term.open($("term"));
+  try { fit.fit(); } catch (e) {}
+  term.onData((d) => {
+    if (termWS && termWS.readyState === 1)
+      termWS.send(JSON.stringify({ type: "input", data: d }));
+  });
+  term.onResize(({ rows, cols }) => {
+    if (termWS && termWS.readyState === 1)
+      termWS.send(JSON.stringify({ type: "resize", rows, cols }));
+  });
+  window.addEventListener("resize", () => {
+    if (term && $("termview").style.display !== "none") { try { fit.fit(); } catch (e) {} }
+  });
+  return true;
+}
+
+async function startTerminal() {
+  if (!ensureTerm()) return;
+  if (termWS && termWS.readyState <= 1) return;  // already connecting/open
+  $("term-restart").style.display = "";
+  term.reset();
+  term.write("\x1b[90mconnecting to sandbox…\x1b[0m\r\n");
+  let ticket;
+  try {
+    const r = await fetch(api + "/terminal/ticket", {
+      method: "POST",
+      headers: authHeaders({ "Content-Type": "application/json" }),
+      body: JSON.stringify({ language: $("lang").value, files: currentFiles() }),
+    });
+    if (!r.ok) {
+      const d = await r.json().catch(() => ({}));
+      term.write("\r\n\x1b[31m" + (d.detail || ("HTTP " + r.status)) + "\x1b[0m\r\n");
+      return;
+    }
+    ticket = (await r.json()).ticket;
+  } catch (e) {
+    term.write("\r\n\x1b[31m" + e + "\x1b[0m\r\n"); return;
+  }
+  const proto = location.protocol === "https:" ? "wss" : "ws";
+  termWS = new WebSocket(`${proto}://${location.host}${api}/terminal?ticket=${encodeURIComponent(ticket)}`);
+  termWS.binaryType = "arraybuffer";
+  termWS.onmessage = (ev) => {
+    if (typeof ev.data === "string") {
+      let m; try { m = JSON.parse(ev.data); } catch (e) { return; }
+      if (m.type === "error") term.write("\r\n\x1b[31m" + m.message + "\x1b[0m\r\n");
+      else if (m.type === "ready") {
+        try { fit.fit(); } catch (e) {}
+        termWS.send(JSON.stringify({ type: "resize", rows: term.rows, cols: term.cols }));
+        term.focus();
+      }
+    } else {
+      term.write(new Uint8Array(ev.data));
+    }
+  };
+  termWS.onclose = () => { term.write("\r\n\x1b[90m[session ended — ⟳ to start again]\x1b[0m\r\n"); termWS = null; };
+  termWS.onerror = () => { term.write("\r\n\x1b[31m[connection error]\x1b[0m\r\n"); };
+}
+
+function stopTerminal() { if (termWS) { try { termWS.close(); } catch (e) {} termWS = null; } }
+
+function showTerminalView(on) {
+  $("outview").style.display = on ? "none" : "flex";
+  $("termview").style.display = on ? "block" : "none";
+  $("tab-output").classList.toggle("active", !on);
+  $("tab-term").classList.toggle("active", on);
+  if (on && ensureTerm()) {
+    setTimeout(() => {
+      try { fit.fit(); } catch (e) {}
+      term.focus();
+      if (!termWS) startTerminal();
+    }, 0);
+  }
+}
+
 document.documentElement.setAttribute("data-theme", localStorage.getItem("sandbox_theme") || "dark");
+$("tab-output").onclick = () => showTerminalView(false);
+$("tab-term").onclick = () => showTerminalView(true);
+$("term-restart").onclick = () => { stopTerminal(); startTerminal(); };
 $("run").onclick = run;
 $("share").onclick = share;
 $("theme").onclick = toggleTheme;

@@ -12,11 +12,15 @@ from .api.ratelimit import RateLimiter
 from .abuse import AbuseTracker
 from .executor.jobqueue import JobQueue, WORKERS
 from .executor.runner import enforce_cache_limit, sweep_orphans
+from .executor.terminal import TerminalManager
 from . import backends, store
 
 UI_DIR = Path(__file__).parent / "ui" / "static"
 JANITOR_INTERVAL_S = float(os.environ.get("SANDBOX_JANITOR_INTERVAL_S", "60"))
 JANITOR_MAX_AGE_S = float(os.environ.get("SANDBOX_JANITOR_MAX_AGE_S", "300"))
+# Interactive terminals hold a sandbox open, so bound them tighter than one-shot runs.
+TERMINAL_MAX_TOTAL = int(os.environ.get("SANDBOX_TERMINAL_MAX_TOTAL", "8"))
+TERMINAL_PER_USER = int(os.environ.get("SANDBOX_TERMINAL_PER_USER", "1"))
 
 
 async def _janitor_loop() -> None:
@@ -51,6 +55,8 @@ async def lifespan(app: FastAPI):
     app.state.queue = JobQueue()
     # streaming bypasses the queue; bound its concurrency to the same worker count
     app.state.stream_slots = asyncio.Semaphore(WORKERS)
+    app.state.terminals = TerminalManager(TERMINAL_MAX_TOTAL, TERMINAL_PER_USER)
+    app.state.terminal_tickets = {}
     await app.state.queue.start()
     janitor = asyncio.create_task(_janitor_loop())
     try:
@@ -61,6 +67,7 @@ async def lifespan(app: FastAPI):
             await janitor
         except asyncio.CancelledError:
             pass
+        await app.state.terminals.shutdown()  # kill any live interactive shells
         await app.state.queue.stop()  # graceful drain of in-flight jobs
         store.close_db()
 

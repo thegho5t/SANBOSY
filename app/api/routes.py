@@ -4,12 +4,16 @@ Phase 2 attach points are marked; none of them require changing this contract.
 """
 import asyncio
 import json
+import secrets
+import time
 from dataclasses import replace
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import (APIRouter, Depends, HTTPException, Query, Request,
+                     WebSocket, WebSocketDisconnect)
 from fastapi.responses import StreamingResponse
 
 from .auth import Identity, auth_enabled, require_admin, require_api_key
+from ..executor.terminal import TerminalSession
 from .ratelimit import RateLimited
 from ..executor.jobqueue import QueueFull
 from ..executor.limits import DEFAULT_LIMITS
@@ -108,6 +112,7 @@ async def stats(request: Request) -> dict:
     return {
         "queue": request.app.state.queue.stats(),
         "rate_limit": request.app.state.limiter.stats(),
+        "terminals": request.app.state.terminals.stats(),
     }
 
 
@@ -266,6 +271,116 @@ async def abuse_report(
     identity: Identity = Depends(require_admin),   # superuser only
 ) -> dict:
     return request.app.state.abuse.report()
+
+
+TERMINAL_TICKET_TTL_S = 30
+
+
+@router.post("/terminal/ticket")
+async def terminal_ticket(
+    req: ExecuteRequest,
+    request: Request,
+    identity: Identity = Depends(require_api_key),
+) -> dict:
+    """Issue a short-lived, single-use ticket to open a terminal WebSocket. The
+    files to stage are captured here, over the authenticated REST call, so the WS
+    URL carries only an opaque 30s ticket — never the API key or the source."""
+    if sum(len(f.content) for f in req.files) > DEFAULT_LIMITS.source_cap_bytes:
+        raise HTTPException(status_code=413, detail="source too large")
+    if not identity.is_admin and request.app.state.abuse.is_quarantined(identity.name):
+        raise HTTPException(status_code=403,
+                            detail="identity quarantined for abusive activity")
+    reason = request.app.state.terminals.rejection(identity.name, identity.is_admin)
+    if reason:
+        raise HTTPException(status_code=429, detail=reason)
+    token = secrets.token_urlsafe(24)
+    request.app.state.terminal_tickets[token] = {
+        "identity": identity.name,
+        "is_admin": identity.is_admin,
+        "files": {f.name: f.content for f in req.files},
+        "expiry": time.time() + TERMINAL_TICKET_TTL_S,
+    }
+    return {"ticket": token, "ttl_s": TERMINAL_TICKET_TTL_S}
+
+
+def _consume_ticket(app, token: str) -> dict | None:
+    tickets = app.state.terminal_tickets
+    now = time.time()
+    for stale in [k for k, v in tickets.items() if v["expiry"] < now]:
+        tickets.pop(stale, None)
+    data = tickets.pop(token, None)  # single use: pop regardless
+    if data is None or data["expiry"] < now:
+        return None
+    return data
+
+
+@router.websocket("/terminal")
+async def terminal_ws(websocket: WebSocket) -> None:
+    """Interactive shell over a WebSocket. Client sends JSON text frames
+    {type:"input",data} and {type:"resize",rows,cols}; server sends raw pty bytes
+    as binary frames. Authenticated by a one-time ticket in the query string."""
+    data = _consume_ticket(websocket.app, websocket.query_params.get("ticket", ""))
+    if data is None:
+        await websocket.close(code=4401)
+        return
+    mgr = websocket.app.state.terminals
+    reason = mgr.rejection(data["identity"], data["is_admin"])
+    if reason:
+        await websocket.accept()
+        await websocket.send_json({"type": "error", "message": reason})
+        await websocket.close()
+        return
+    await websocket.accept()
+
+    async def send(chunk: bytes) -> None:
+        await websocket.send_bytes(chunk)
+
+    session = TerminalSession(data["identity"], data["files"], send,
+                              on_close=mgr.unregister)
+    mgr.register(session)
+    try:
+        await session.start()
+    except Exception as e:
+        mgr.unregister(session)
+        try:
+            await websocket.send_json({"type": "error", "message": str(e)})
+        except Exception:
+            pass
+        await websocket.close()
+        return
+    await websocket.send_json({"type": "ready"})
+
+    async def pump_client() -> None:
+        while True:
+            msg = await websocket.receive()
+            if msg["type"] == "websocket.disconnect":
+                return
+            text = msg.get("text")
+            if text is not None:
+                try:
+                    obj = json.loads(text)
+                except ValueError:
+                    continue
+                if obj.get("type") == "input":
+                    session.write(str(obj.get("data", "")).encode("utf-8", "surrogatepass"))
+                elif obj.get("type") == "resize":
+                    session.resize(int(obj.get("rows", 24)), int(obj.get("cols", 80)))
+            elif msg.get("bytes") is not None:
+                session.write(msg["bytes"])
+
+    client = asyncio.create_task(pump_client())
+    ended = asyncio.create_task(session.closed.wait())
+    try:
+        await asyncio.wait([client, ended], return_when=asyncio.FIRST_COMPLETED)
+    except WebSocketDisconnect:
+        pass
+    finally:
+        client.cancel()
+        await session.close()
+        try:
+            await websocket.close()
+        except Exception:
+            pass
 
 
 @router.get("/runs", response_model=RunListResponse)

@@ -23,7 +23,8 @@ def test_match_valid_and_invalid(tmp_path, monkeypatch):
     monkeypatch.setattr(auth, "KEYS_FILE", kf)
     monkeypatch.delenv("SANDBOX_API_KEYS", raising=False)
     assert auth.auth_enabled() is True
-    assert auth._match("sk_good") == "op"
+    # _match returns the matching key entry (name + role) or None
+    assert auth._match("sk_good")["name"] == "op"
     assert auth._match("sk_bad") is None
 
 

@@ -79,6 +79,30 @@ if command -v go >/dev/null; then
   GOCACHE="$RUNTIME_ROOT/cache/go" go build std 2>/dev/null || true
 fi
 
+# Interactive shell + core utilities for the web terminal (bash + coreutils).
+# Only userland tools — no new privileges; everything still runs inside gVisor.
+echo "== shell + debug tools -> rootfs =="
+SHELL_CANDIDATES=(
+  /usr/bin/bash /usr/bin/dash
+  /usr/bin/ls /usr/bin/cat /usr/bin/cp /usr/bin/mv /usr/bin/rm /usr/bin/mkdir
+  /usr/bin/rmdir /usr/bin/touch /usr/bin/ln /usr/bin/chmod /usr/bin/pwd
+  /usr/bin/head /usr/bin/tail /usr/bin/wc /usr/bin/sort /usr/bin/uniq
+  /usr/bin/cut /usr/bin/tr /usr/bin/tee /usr/bin/nl /usr/bin/tac
+  /usr/bin/env /usr/bin/printenv /usr/bin/id /usr/bin/date /usr/bin/sleep
+  /usr/bin/dirname /usr/bin/basename /usr/bin/realpath /usr/bin/readlink
+  /usr/bin/du /usr/bin/stat /usr/bin/seq /usr/bin/find /usr/bin/grep
+  /usr/bin/sed /usr/bin/awk /usr/bin/mawk /usr/bin/diff /usr/bin/less
+  /usr/bin/clear /usr/bin/vi /usr/bin/vim.tiny /usr/bin/nano /usr/bin/ps
+  /usr/bin/which /usr/bin/xxd /usr/bin/hexdump /usr/bin/file /usr/bin/uname
+  /usr/bin/nproc /usr/bin/timeout /usr/bin/md5sum /usr/bin/mktemp /usr/bin/watch
+)
+SHELL_BINS=()
+for c in "${SHELL_CANDIDATES[@]}"; do [ -x "$c" ] && SHELL_BINS+=(--bin "$c"); done
+SHELL_TREES=()
+[ -d /usr/share/terminfo/x ] && SHELL_TREES+=(--tree /usr/share/terminfo/x)
+[ -d /lib/terminfo ] && SHELL_TREES+=(--tree /lib/terminfo)
+$BR "${SHELL_BINS[@]}" "${SHELL_TREES[@]}" --link /usr/bin/sh:bash
+
 echo "== smoke test =="
 "$RUNSC" --rootless --network=none --platform=systrap do /usr/bin/python3 -c 'print("sandbox-python-ok")'
 

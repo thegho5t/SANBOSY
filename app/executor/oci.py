@@ -59,7 +59,8 @@ def build_config(args: list[str], src_dir: Path,
                  env: dict[str, str] | None = None,
                  uid: int = 65534, gid: int = 65534,
                  out_dir: Path | None = None, out_rw: bool = False,
-                 cache_dir: Path | None = None) -> dict:
+                 cache_dir: Path | None = None,
+                 terminal: bool = False, cwd: str = "/box") -> dict:
     base_env = {
         "PATH": "/usr/local/bin:/usr/bin",
         "HOME": "/box",
@@ -111,11 +112,11 @@ def build_config(args: list[str], src_dir: Path,
     return {
         "ociVersion": "1.1.0",
         "process": {
-            "terminal": False,
+            "terminal": terminal,
             "user": {"uid": uid, "gid": gid},
             "args": args,
             "env": [f"{k}={v}" for k, v in base_env.items()],
-            "cwd": "/box",
+            "cwd": cwd,
             "capabilities": {
                 "bounding": [], "effective": [], "inheritable": [],
                 "permitted": [], "ambient": [],
